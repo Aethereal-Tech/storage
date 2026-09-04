@@ -8,8 +8,10 @@ import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
+import java.util.Objects;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -159,6 +161,76 @@ class UploadInspectorTest {
     }
 
     @Nested
+    class TooLargeDeclaredPixels {
+
+        @Test
+        @DisplayName("a header declaring 20000×20000 is refused before ImageIO.read ever runs, naming pixels")
+        void aHandBuiltHeaderDeclaringABombIsRejectedBeforeDecoding() {
+            final UploadInspector inspector = new UploadInspector(UploadRule.of(1024, 0, UploadFormat.PNG));
+            final byte[] bomb = pngHeaderDeclaring(20_000, 20_000);
+
+            assertThatThrownBy(() -> inspector.inspect(bomb))
+                    .isInstanceOf(UploadRejectedException.class)
+                    .satisfies(ex -> {
+                        final UploadRejectedException rejected = (UploadRejectedException) ex;
+                        assertThat(rejected.reason()).isEqualTo(UploadRejectedException.Reason.TOO_LARGE);
+                        assertThat(rejected.getMessage()).contains("pixels");
+                    });
+        }
+
+        @Test
+        @DisplayName("a header declaring EXACTLY the bound clears the pixel check — \"over\", not \"at or over\"")
+        void aHeaderAtExactlyTheBoundClearsThePixelCheck() {
+            // The header-only bytes below have no IDAT/IEND, so they cannot decode either way; what
+            // this proves is which check is REACHED. TOO_LARGE would mean the bound is "at or over";
+            // UNDECODABLE proves 100 pixels against a bound of 100 cleared the pixel check and fell
+            // through to the decode this rule's job is to guard.
+            final UploadRule rule = new UploadRule(java.util.Set.of(UploadFormat.PNG), 1024 * 1024, 0, 100L);
+            final UploadInspector inspector = new UploadInspector(rule);
+            final byte[] atBound = pngHeaderDeclaring(10, 10);
+
+            assertThatThrownBy(() -> inspector.inspect(atBound))
+                    .isInstanceOf(UploadRejectedException.class)
+                    .satisfies(ex -> assertThat(((UploadRejectedException) ex).reason())
+                            .isEqualTo(UploadRejectedException.Reason.UNDECODABLE));
+        }
+    }
+
+    @Nested
+    class Undecodable {
+
+        @Test
+        @DisplayName("a PNG with a valid signature and header but a corrupt IDAT is UNDECODABLE, not accepted")
+        void aPngWithAValidHeaderButCorruptPixelDataIsRejected() {
+            final UploadInspector inspector = new UploadInspector(PNG_JPEG_RULE);
+            final byte[] corrupt = corruptPixelPng();
+
+            assertThatThrownBy(() -> inspector.inspect(corrupt))
+                    .isInstanceOf(UploadRejectedException.class)
+                    .satisfies(ex -> {
+                        final UploadRejectedException rejected = (UploadRejectedException) ex;
+                        assertThat(rejected.reason()).isEqualTo(UploadRejectedException.Reason.UNDECODABLE);
+                        assertThat(rejected.format()).isEqualTo(UploadFormat.PNG);
+                    });
+        }
+
+        @Test
+        @DisplayName("a JPEG whose header reads fine but whose scan data is corrupt is UNDECODABLE")
+        void aJpegWithAValidHeaderButCorruptScanDataIsRejected() {
+            final UploadInspector inspector = new UploadInspector(PNG_JPEG_RULE);
+            final byte[] corrupt = corruptScanJpeg(64, 48);
+
+            assertThatThrownBy(() -> inspector.inspect(corrupt))
+                    .isInstanceOf(UploadRejectedException.class)
+                    .satisfies(ex -> {
+                        final UploadRejectedException rejected = (UploadRejectedException) ex;
+                        assertThat(rejected.reason()).isEqualTo(UploadRejectedException.Reason.UNDECODABLE);
+                        assertThat(rejected.format()).isEqualTo(UploadFormat.JPEG);
+                    });
+        }
+    }
+
+    @Nested
     class HappyPath {
 
         @Test
@@ -274,6 +346,84 @@ class UploadInspectorTest {
             throw new UncheckedIOException(e);
         }
         return out.toByteArray();
+    }
+
+    /**
+     * A PNG signature plus a bare {@code IHDR} chunk declaring {@code width}×{@code height}, and
+     * nothing else — no {@code IDAT}, no {@code IEND}. The header CRC is zeroed rather than
+     * computed: {@code ImageIO}'s {@code ImageReader.getWidth}/{@code getHeight} reads the chunk's
+     * declared length and type and trusts the dimensions without verifying the checksum, which is
+     * exactly the gap {@link UploadRule#maxDecodedPixels()} exists to close — a header this cheap to
+     * forge must not be trusted to size a buffer.
+     */
+    private static byte[] pngHeaderDeclaring(final int width, final int height) {
+        final byte[] signature = {(byte) 0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A};
+        final ByteArrayOutputStream ihdrData = new ByteArrayOutputStream();
+        ihdrData.writeBytes(bigEndianInt(width));
+        ihdrData.writeBytes(bigEndianInt(height));
+        ihdrData.writeBytes(new byte[] {8, 2, 0, 0, 0}); // bit depth, RGB, compression/filter/interlace
+        final byte[] ihdrChunkData = ihdrData.toByteArray();
+        return concat(
+                signature,
+                bigEndianInt(ihdrChunkData.length),
+                ascii("IHDR"),
+                ihdrChunkData,
+                new byte[] {0, 0, 0, 0}); // CRC, never checked for a header-only read
+    }
+
+    private static byte[] bigEndianInt(final int value) {
+        return new byte[] {
+            (byte) (value >>> 24), (byte) (value >>> 16), (byte) (value >>> 8), (byte) value
+        };
+    }
+
+    /**
+     * Loaded from disk rather than built here: this is the exact 100-byte file a real browser
+     * reported as a broken image — a valid signature, a valid 64×48 {@code IHDR}, and an
+     * {@code IDAT} whose zlib stream fails with "invalid distance too far back". The point of using
+     * the real artifact rather than a synthesised one is that this inspector must refuse precisely
+     * what actually reached a user, not a stand-in for it.
+     */
+    private static byte[] corruptPixelPng() {
+        try (InputStream resource =
+                Objects.requireNonNull(
+                        UploadInspectorTest.class.getResourceAsStream("/pixel-undecodable.png"),
+                        "test resource pixel-undecodable.png is missing")) {
+            return resource.readAllBytes();
+        } catch (final IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    /**
+     * A real, ImageIO-written JPEG whose header (SOF0, carrying the dimensions, and the SOS marker
+     * that follows it) is left completely intact, truncated immediately after that header with a
+     * stray {@code FF D8} — a second SOI marker — standing in for its entropy-coded scan data.
+     *
+     * <p>Plain truncation of the scan data does not reproduce the defect: the JDK's JPEG decoder is
+     * lenient about a short or missing scan and decodes anyway. A stray marker where compressed
+     * pixel data belongs is what a genuinely corrupted transfer looks like once it reaches the
+     * decoder, and it is what reliably makes {@code ImageIO.read} throw while {@code getWidth}/
+     * {@code getHeight} — which only has to parse as far as SOS — still succeed.
+     */
+    private static byte[] corruptScanJpeg(final int width, final int height) {
+        final byte[] full = jpeg(width, height);
+        int sosIndex = -1;
+        for (int i = 0; i < full.length - 1; i++) {
+            if ((full[i] & 0xFF) == 0xFF && (full[i + 1] & 0xFF) == 0xDA) {
+                sosIndex = i;
+                break;
+            }
+        }
+        if (sosIndex < 0) {
+            throw new IllegalStateException("no SOS marker found in a freshly written JPEG");
+        }
+        final int segmentLength = ((full[sosIndex + 2] & 0xFF) << 8) | (full[sosIndex + 3] & 0xFF);
+        final int entropyStart = sosIndex + 2 + segmentLength;
+        final byte[] truncated = java.util.Arrays.copyOf(full, entropyStart + 2);
+        truncated[entropyStart] = (byte) 0xFF;
+        truncated[entropyStart + 1] = (byte) 0xD8;
+        return truncated;
     }
 
     /** The {@code ....ftyp<brand>} container HEIC and AVIF share; the leading four bytes are a box size the sniffer ignores. */
