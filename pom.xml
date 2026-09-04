@@ -1,0 +1,234 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>net.aetherealtech</groupId>
+    <artifactId>storage</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+    <packaging>pom</packaging>
+
+    <name>Aethereal Object Storage (parent)</name>
+    <description>A neutral object-storage port for Java, with upload inspection, an in-memory implementation, and an S3-compatible adapter.</description>
+    <url>https://github.com/Aethereal-Tech/storage</url>
+
+    <licenses>
+        <license>
+            <name>MIT License</name>
+            <url>https://opensource.org/licenses/MIT</url>
+            <distribution>repo</distribution>
+        </license>
+    </licenses>
+
+    <scm>
+        <connection>scm:git:https://github.com/Aethereal-Tech/storage.git</connection>
+        <url>https://github.com/Aethereal-Tech/storage</url>
+    </scm>
+
+    <!-- Two artifacts, one repository, one version, one release. The split is the dependency, not
+         tidiness: `storage-core` has zero mandatory runtime dependencies and `storage-s3` drags in
+         the AWS SDK and its dozen transitive modules. A consumer that only ever wants the port, the
+         key rule, upload inspection and an in-memory implementation for its own suite should not
+         inherit an S3 client or its CVE feed. Splitting them at the VERSION instead — two release
+         trains — would let a consumer resolve `storage-core:0.3.0` against `storage-s3:0.1.0` and
+         meet the mismatch as a NoSuchMethodError; both are published from the same commit at the
+         same number precisely so that cannot happen. -->
+    <modules>
+        <module>storage-core</module>
+        <module>storage-s3</module>
+    </modules>
+
+    <properties>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <!-- Consumers need JDK 25 or newer. `release` (not source/target) is what also checks every
+             call against the Java 25 API, so the bytecode version and the API surface cannot
+             disagree. -->
+        <maven.compiler.release>25</maven.compiler.release>
+
+        <!-- Spring is optional everywhere it appears. These are the versions the autoconfiguration
+             and the AfterCommit helper are COMPILED against, not ones imposed on consumers: Spring
+             Boot brings its own, and the handful of types touched here (@AutoConfiguration, the
+             @ConditionalOn* family, Binder, @ConfigurationProperties, TransactionSynchronization)
+             have been stable across generations. spring-tx's version is the one Spring Boot 4.0.3
+             manages, so a consumer on that Boot line resolves exactly what was compiled against. -->
+        <spring-boot.version>4.0.3</spring-boot.version>
+        <spring-framework.version>7.0.5</spring-framework.version>
+
+        <awssdk.version>2.53.1</awssdk.version>
+
+        <junit.version>5.14.4</junit.version>
+        <assertj.version>3.27.7</assertj.version>
+        <wiremock.version>3.13.2</wiremock.version>
+        <jackson.version>2.20.1</jackson.version>
+        <jacoco.version>0.8.15</jacoco.version>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <!-- The JUnit BOM, imported rather than pinned one artifact at a time: a test dependency
+                 that brings its OWN JUnit is how the platform ends up misaligned, and the launcher
+                 then refuses to discover any test at all rather than failing one. The BOM pins the
+                 whole family — jupiter 5.x and platform 1.x move together. -->
+            <dependency>
+                <groupId>org.junit</groupId>
+                <artifactId>junit-bom</artifactId>
+                <version>${junit.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
+            <!-- The AWS BOM keeps s3, the HTTP client and every transitive AWS module on one
+                 version. Mixing them is not a theoretical hazard: the SDK splits its internals
+                 across a dozen artifacts that are released together and assume each other. -->
+            <dependency>
+                <groupId>software.amazon.awssdk</groupId>
+                <artifactId>bom</artifactId>
+                <version>${awssdk.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
+            <dependency>
+                <groupId>net.aetherealtech</groupId>
+                <artifactId>storage-core</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-autoconfigure</artifactId>
+                <version>${spring-boot.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-test</artifactId>
+                <version>${spring-boot.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.springframework</groupId>
+                <artifactId>spring-tx</artifactId>
+                <version>${spring-framework.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>org.junit.jupiter</groupId>
+                <artifactId>junit-jupiter</artifactId>
+                <version>${junit.version}</version>
+                <scope>test</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.assertj</groupId>
+                <artifactId>assertj-core</artifactId>
+                <version>${assertj.version}</version>
+                <scope>test</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.wiremock</groupId>
+                <artifactId>wiremock</artifactId>
+                <version>${wiremock.version}</version>
+                <scope>test</scope>
+            </dependency>
+            <!-- Only the S3 tier's tests parse anything: an XML error body is asserted as text, but
+                 nothing here writes JSON. Jackson is pinned rather than inherited from WireMock's
+                 own tree so a WireMock upgrade cannot silently move it. -->
+            <dependency>
+                <groupId>com.fasterxml.jackson.core</groupId>
+                <artifactId>jackson-databind</artifactId>
+                <version>${jackson.version}</version>
+                <scope>test</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-compiler-plugin</artifactId>
+                    <version>3.15.0</version>
+                    <configuration>
+                        <compilerArgs>
+                            <arg>-Xlint:all,-serial</arg>
+                        </compilerArgs>
+                    </configuration>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-surefire-plugin</artifactId>
+                    <version>3.5.6</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-source-plugin</artifactId>
+                    <version>3.4.0</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-javadoc-plugin</artifactId>
+                    <version>3.12.0</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.jacoco</groupId>
+                    <artifactId>jacoco-maven-plugin</artifactId>
+                    <version>${jacoco.version}</version>
+                </plugin>
+            </plugins>
+        </pluginManagement>
+
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-source-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>attach-sources</id>
+                        <goals><goal>jar-no-fork</goal></goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-javadoc-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>attach-javadocs</id>
+                        <goals><goal>jar</goal></goals>
+                    </execution>
+                </executions>
+                <configuration>
+                    <doclint>none</doclint>
+                    <quiet>true</quiet>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+
+    <distributionManagement>
+        <repository>
+            <id>github</id>
+            <name>GitHub Packages</name>
+            <url>https://maven.pkg.github.com/Aethereal-Tech/storage</url>
+        </repository>
+    </distributionManagement>
+</project>

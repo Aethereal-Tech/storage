@@ -1,0 +1,68 @@
+name: PR Check
+
+# The full build and test suite against what master would become - GitHub builds a pull_request
+# workflow from the PR merged into its base, so this tests the merge result, not the branch tip in
+# isolation. Publishes nothing; that is publish.yml's job on master, kept apart so a green run here
+# means exactly "the checks passed" and nothing else.
+#
+# Security note: no step below interpolates any GitHub Actions expression (issue/PR title or body,
+# commit messages, branch names, etc.) directly into a run: command. The only expression used
+# anywhere is the PR number in the concurrency group, which GitHub Actions itself substitutes before
+# the job runs (never inside a shell command), so there is nothing here for a crafted PR title or
+# commit message to inject into.
+on:
+  pull_request:
+    branches: [master]
+    # ready_for_review is what makes the draft skip below safe: without it, marking a PR ready fires
+    # no event and the checks would never run at all.
+    types: [opened, synchronize, reopened, ready_for_review]
+
+# A newer push supersedes an in-flight run for the same PR - cancelling it saves minutes and costs
+# nothing.
+concurrency:
+  group: pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  # A draft pull request runs nothing: work in progress is pushed many times before it is worth
+  # checking. Marking it ready for review fires ready_for_review, which runs the full build - the
+  # gate is not weakened, only deferred to a deliberate act.
+  verify:
+    name: Build and verify
+    if: ${{ !github.event.pull_request.draft }}
+    runs-on: ubuntu-latest
+    # A cap, not an estimate - without one a job inherits GitHub's 360-minute default.
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Setup JDK
+        uses: actions/setup-java@v5
+        with:
+          java-version: '25'
+          distribution: 'temurin'
+          cache: 'maven'
+
+      # The whole reactor, both modules: the key and upload-inspection tests, the WireMock-backed S3
+      # wire tests, the Spring autoconfiguration decision matrices, and each module's own JaCoCo
+      # gate. Coverage is measured per module, deliberately - one merged number would let a
+      # well-covered core hide an untested adapter.
+      #
+      # No step here reaches a bucket. The S3 tier asserts the HTTP the SDK produces against
+      # WireMock on localhost; a suite that needs credentials is a suite that quietly stops running.
+      - name: Build and test with Maven
+        run: ./mvnw --batch-mode clean verify
+
+      # Kept even on failure: when a coverage gate trips, these HTML reports are what tell you which
+      # class dropped below the floor - and which module's gate it was.
+      - name: Upload coverage reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: jacoco-reports
+          path: '*/target/site/jacoco/'
+          if-no-files-found: ignore
+          retention-days: 7

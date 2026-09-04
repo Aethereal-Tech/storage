@@ -1,0 +1,211 @@
+name: Publish
+
+# What happens to master after PR Check has already passed once: the same build and test suite, run
+# again against the actual merge commit (two PRs that each pass alone can still break master
+# together — this is what catches that), and then, only if it passes, a semantically versioned
+# release: a git tag, a GitHub Release, and BOTH Maven artifacts published to GitHub Packages.
+#
+# Verification and publication in ONE workflow rather than chained by workflow_run, so the release
+# job simply `needs:` the build. There is no window in which master is green but unreleased for
+# reasons nobody can see.
+#
+# Security note: no step below interpolates any GitHub Actions expression built from untrusted input
+# (commit messages, PR titles/bodies, branch names, etc.) directly into a run: command. Commit
+# subjects and bodies reach the version-derivation step only as quoted `git log` output piped to
+# `grep`/`printf` — never interpolated into a shell string — so a crafted commit message cannot run
+# anything here; at worst it fails to match a pattern and the commit contributes no version bump.
+on:
+  push:
+    branches: [master]
+  # Manual re-cut, e.g. after fixing this workflow itself, or to retry a release job that failed
+  # after the build already passed.
+  workflow_dispatch:
+
+# Deliberately NOT cancel-in-progress: on a pull request a superseded run is waste, but here it would
+# leave a merged commit with no verdict and possibly no release. Two merges in quick succession must
+# each get their own.
+concurrency:
+  group: publish-${{ github.sha }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write   # create the git tag and the GitHub Release
+  packages: write   # publish the Maven artifacts to GitHub Packages
+
+jobs:
+  build:
+    name: Build and verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Setup JDK
+        uses: actions/setup-java@v5
+        with:
+          java-version: '25'
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: Build and test with Maven
+        run: ./mvnw --batch-mode clean verify
+
+      - name: Upload coverage reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: jacoco-reports
+          path: '*/target/site/jacoco/'
+          if-no-files-found: ignore
+          retention-days: 7
+
+  release:
+    name: Version, publish, and tag
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          # The whole history: the next version is derived from the commits since the last tag
+          # rather than stored anywhere.
+          fetch-depth: 0
+
+      # SemVer, decided by the commits themselves. This repository writes conventional messages
+      # (feat/fix/refactor/ci/docs), so the bump is a fact about the change rather than a number
+      # someone remembers to increment:
+      #
+      #   BREAKING CHANGE, or a ! after the type   -> major
+      #   feat                                     -> minor
+      #   fix | perf | refactor                    -> patch
+      #   only ci/docs/chore/test/style            -> no release at all
+      #
+      # That last line matters: a workflow tweak or a docs fix should not mint a version, or every
+      # release becomes noise and "what changed" stops being answerable from the tag list.
+      - name: Work out the next version
+        id: version
+        run: |
+          set -euo pipefail
+          last=$(git describe --tags --abbrev=0 --match 'v[0-9]*' 2>/dev/null || echo "")
+          if [ -z "$last" ]; then
+            # Seeded at 0.1.0: 0.x says the API may still change, which is honest for a contract two
+            # products are adopting at once and have not yet lived with.
+            echo "No previous tag; seeding at v0.1.0."
+            echo "version=0.1.0" >> "$GITHUB_OUTPUT"
+            echo "release=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          subjects=$(git log --format='%s' "${last}..HEAD")
+          bodies=$(git log --format='%B' "${last}..HEAD")
+          echo "Commits since ${last}:"; printf '%s\n' "$subjects" | sed 's/^/    /'
+
+          bump=none
+          if printf '%s' "$bodies" | grep -q 'BREAKING CHANGE' \
+             || printf '%s' "$subjects" | grep -qE '^[a-z]+(\([^)]*\))?!:'; then
+            bump=major
+          elif printf '%s' "$subjects" | grep -qE '^feat(\([^)]*\))?:'; then
+            bump=minor
+          elif printf '%s' "$subjects" | grep -qE '^(fix|perf|refactor)(\([^)]*\))?:'; then
+            bump=patch
+          fi
+
+          if [ "$bump" = "none" ]; then
+            echo "Nothing release-worthy since ${last} (only chore-level commits)."
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          IFS=. read -r major minor patch <<< "${last#v}"
+          case "$bump" in
+            major) major=$((major + 1)); minor=0; patch=0 ;;
+            minor) minor=$((minor + 1)); patch=0 ;;
+            patch) patch=$((patch + 1)) ;;
+          esac
+          echo "Bump: ${bump} -> ${major}.${minor}.${patch}"
+          echo "version=${major}.${minor}.${patch}" >> "$GITHUB_OUTPUT"
+          echo "release=true" >> "$GITHUB_OUTPUT"
+          echo "previous=${last}" >> "$GITHUB_OUTPUT"
+
+      # Two merges landing within minutes of each other each get their own run (by design — see the
+      # concurrency note above), and if both reach this point before either has tagged, both derive
+      # the same number. Caught here rather than in `gh release create`, whose own error says only
+      # that a tag exists and nothing about why. Re-running this workflow fixes it: by then the other
+      # run's tag exists, so the derivation above sees it and produces the next number.
+      - name: That version must not already exist
+        if: steps.version.outputs.release == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          if gh release view "v${VERSION}" >/dev/null 2>&1; then
+            echo "::error::v${VERSION} already exists — another run tagged it first. Re-run this workflow."
+            exit 1
+          fi
+
+      # server-id/server-username/server-password wire up ~/.m2/settings.xml to authenticate the
+      # `github` repository (see the root pom's distributionManagement) using the workflow's own
+      # GITHUB_TOKEN — no separate PAT to create or rotate. The password is a reference to an env var
+      # name, resolved from the GITHUB_TOKEN set on the deploy step below, not a literal secret here.
+      - name: Setup JDK
+        if: steps.version.outputs.release == 'true'
+        uses: actions/setup-java@v5
+        with:
+          java-version: '25'
+          distribution: 'temurin'
+          cache: 'maven'
+          server-id: github
+          server-username: GITHUB_ACTOR
+          server-password: GITHUB_TOKEN
+
+      # The version is stamped into the build rather than committed: the poms stay on a SNAPSHOT, so
+      # there is no version-bump commit and no merge conflicts over a number — the tag is the one
+      # source of truth. `-DprocessAllModules` because this is a reactor: without it only the root
+      # pom moves and the modules keep pointing at a parent version that no longer exists.
+      # `-DskipTests` because the build job already ran them against this exact commit; that is the
+      # whole reason release `needs: build`. One `deploy` publishes the parent pom and BOTH jars at
+      # the same number, so a consumer can never resolve one module against another's release.
+      - name: Set the release version and deploy to GitHub Packages
+        if: steps.version.outputs.release == 'true'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          ./mvnw --batch-mode versions:set \
+            -DnewVersion="$VERSION" -DprocessAllModules=true -DgenerateBackupPoms=false
+          ./mvnw --batch-mode -DskipTests deploy
+
+      - name: Tag and publish the release
+        if: steps.version.outputs.release == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+          PREVIOUS: ${{ steps.version.outputs.previous }}
+        run: |
+          set -euo pipefail
+          notes=$(mktemp)
+          {
+            echo "Built from \`$(git rev-parse --short HEAD)\`, which passed CI in full."
+            echo
+            echo "Maven, on GitHub Packages — see the README's \"Install\" section. This is a PRIVATE repository: a consumer's token needs access to the organization's private packages."
+            echo
+            echo "- \`net.aetherealtech:storage-core:${VERSION}\` — the port, the key, upload inspection, and the in-memory and unavailable implementations. No mandatory runtime dependencies."
+            echo "- \`net.aetherealtech:storage-s3:${VERSION}\` — the S3 adapter over the AWS SDK. Add it only if you talk to an S3-compatible service."
+            echo
+            if [ -n "${PREVIOUS:-}" ]; then
+              echo "### Changes since ${PREVIOUS}"
+              git log --format='- %s' "${PREVIOUS}..HEAD"
+            else
+              echo "First automated release."
+            fi
+          } > "$notes"
+          gh release create "v${VERSION}" \
+            --title "v${VERSION}" \
+            --notes-file "$notes" \
+            --target "$(git rev-parse HEAD)"
