@@ -121,13 +121,18 @@ the other.
   library quirk into a rejected upload. `TOO_SMALL` is only ever raised on a dimension actually
   read.
 
-## Versioning
+## Versioning and merging
 
 `0.x` — the API may still change. Publishing is automatic from `master` (see
 `.github/workflows/publish.yml`); the poms stay on `-SNAPSHOT` and the release number is stamped in
 by CI, so there is never a version-bump commit to conflict over. A commit that should not cut a
 release (docs, ci, chore, test, style with no accompanying fix/feat) must be typed accordingly — the
 workflow trusts the commit type, not a judgment call at merge time.
+
+**A merge is not finished until the branch is gone and the issue is closed** — delete the merged
+branch, local and remote, in the same step as the merge, and close every GitHub issue the merge
+resolved with a comment naming the pull request or commit. Merged branches only: a parked branch
+stays until its work lands.
 
 ## Build
 

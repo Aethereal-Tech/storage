@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>net.aetherealtech</groupId>
+        <artifactId>storage</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>storage-core</artifactId>
+    <packaging>jar</packaging>
+
+    <name>Aethereal Object Storage</name>
+    <description>The object-storage port, the validated key, upload inspection, and the in-memory and unavailable implementations.</description>
+
+    <!-- ZERO mandatory runtime dependencies. Everything here is the JDK: the port and the key are
+         plain Java, and upload inspection reads magic bytes by hand and asks javax.imageio for PNG
+         and JPEG dimensions — imageio is in java.desktop, which is part of the JDK.
+
+         Spring appears twice and is OPTIONAL both times. `optional` keeps it off every consumer's
+         classpath; the autoconfiguration is named only from Spring Boot's own registration file, and
+         AfterCommit is loaded only when something calls it. On a classpath without Spring, neither
+         is ever resolved and their absence costs nothing. -->
+    <dependencies>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-autoconfigure</artifactId>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-tx</artifactId>
+            <optional>true</optional>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <!-- Strict from day one. The key rule, the sniffer and the refusals are pure logic with
+                 no excuse for an unexecuted line, and this library's whole reason to exist is that
+                 its refusals are loud: an untested refusal branch is a silent one. Raising a floor
+                 later is easy; a gate introduced after the fact gets argued down instead of met. -->
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>prepare-agent</id>
+                        <goals><goal>prepare-agent</goal></goals>
+                    </execution>
+                    <execution>
+                        <id>report</id>
+                        <phase>verify</phase>
+                        <goals><goal>report</goal></goals>
+                    </execution>
+                    <execution>
+                        <id>check</id>
+                        <phase>verify</phase>
+                        <goals><goal>check</goal></goals>
+                        <configuration>
+                            <rules>
+                                <rule>
+                                    <element>BUNDLE</element>
+                                    <!-- JaCoCo class patterns are ANT-style over the .class file
+                                         PATH, so the separator is '/', never '.'. A dotted pattern
+                                         matches nothing, and an includes filter matching nothing
+                                         makes the ratio check pass vacuously — the gate then
+                                         reports success at any real coverage. -->
+                                    <includes>
+                                        <include>net/aetherealtech/storage/*</include>
+                                        <include>net/aetherealtech/storage/upload/*</include>
+                                        <include>net/aetherealtech/storage/tx/*</include>
+                                    </includes>
+                                    <!-- `net.aetherealtech.storage.spring` is deliberately absent
+                                         from that list. It is wiring, not logic: what it must get
+                                         right is WHICH ObjectStorage a given mode and set of
+                                         credentials produces, and that is proven by
+                                         StorageAutoConfigurationTest's decision matrix (including
+                                         the present-but-empty case @ConditionalOnProperty gets
+                                         wrong) rather than by a percentage over property accessors
+                                         that exist for Spring's binder to call.
+
+                                         `storage.tx` is NOT excluded with it. AfterCommit needs
+                                         Spring to compile, but what it does — register, or delete
+                                         now — is a decision with consequences, and its three paths
+                                         are asserted against a real
+                                         TransactionSynchronizationManager. -->
+                                    <limits>
+                                        <limit>
+                                            <counter>LINE</counter>
+                                            <value>COVEREDRATIO</value>
+                                            <minimum>0.90</minimum>
+                                        </limit>
+                                        <limit>
+                                            <counter>BRANCH</counter>
+                                            <value>COVEREDRATIO</value>
+                                            <minimum>0.80</minimum>
+                                        </limit>
+                                    </limits>
+                                </rule>
+                            </rules>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>

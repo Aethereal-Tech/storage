@@ -1,0 +1,141 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>net.aetherealtech</groupId>
+        <artifactId>storage</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>storage-s3</artifactId>
+    <packaging>jar</packaging>
+
+    <name>Aethereal Object Storage — S3</name>
+    <description>The S3-compatible adapter: the one implementation that needs an AWS SDK, kept in its own artifact.</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>net.aetherealtech</groupId>
+            <artifactId>storage-core</artifactId>
+        </dependency>
+
+        <!-- The reason this module exists, and the reason it is not the core one. Speaking S3 by
+             hand is not a few hundred lines of well-scoped JDK code: it is SigV4 canonical requests,
+             query-parameter presigning, chunked payload signing and a decade of per-provider
+             interoperability. The AWS SDK is the PROTOCOL client and not a commitment to AWS —
+             everything is decided by the configured endpoint, and the same code reaches Hetzner,
+             MinIO or any other S3-compatible service.
+
+             The SDK ships three HTTP clients and picks one off the classpath at runtime, failing at
+             startup if it finds none or more than one. url-connection-client is the smallest:
+             java.net.HttpURLConnection, no Netty event loop and no Apache connection pool, which is
+             enough for putting and deleting objects of a few megabytes. The other two are excluded
+             rather than merely not added, because `s3` pulls apache-client transitively and Netty
+             arrives with anything asynchronous — an unexcluded pair is an ambiguous-client failure
+             at a consumer's startup, in a consumer's build, for a dependency they never named. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>s3</artifactId>
+            <exclusions>
+                <exclusion>
+                    <groupId>software.amazon.awssdk</groupId>
+                    <artifactId>apache-client</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>software.amazon.awssdk</groupId>
+                    <artifactId>netty-nio-client</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>url-connection-client</artifactId>
+        </dependency>
+
+        <!-- Optional here for the same reason as in the core module: this artifact registers its own
+             autoconfiguration, ordered before the core one so S3 wins when credentials are
+             configured, and a consumer without Spring never loads the class that names these types. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-autoconfigure</artifactId>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- A real HTTP server in-process, holding the assertions this module exists for. The
+             alternative — mocking S3Client — would assert that the adapter calls the SDK the way the
+             adapter calls the SDK, and prove nothing about the request that leaves the machine:
+             not the Host header virtual-hosted addressing produces, not the path-style request
+             line, not the SigV4 parameters on a presigned URL. Assert the wire, never a round trip. -->
+        <dependency>
+            <groupId>org.wiremock</groupId>
+            <artifactId>wiremock</artifactId>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>prepare-agent</id>
+                        <goals><goal>prepare-agent</goal></goals>
+                    </execution>
+                    <execution>
+                        <id>report</id>
+                        <phase>verify</phase>
+                        <goals><goal>report</goal></goals>
+                    </execution>
+                    <execution>
+                        <id>check</id>
+                        <phase>verify</phase>
+                        <goals><goal>check</goal></goals>
+                        <configuration>
+                            <rules>
+                                <rule>
+                                    <element>BUNDLE</element>
+                                    <!-- ANT-style over the .class file PATH, so the separator is
+                                         '/', never '.'. A dotted pattern matches nothing, and an
+                                         includes filter matching nothing makes the ratio check pass
+                                         vacuously — the gate would then report success at any real
+                                         coverage.
+
+                                         `net.aetherealtech.storage.s3.spring` is deliberately
+                                         absent, exactly as its counterpart is in storage-core: it is
+                                         wiring, and what it must get right is WHICH ObjectStorage a
+                                         given set of credentials produces, proven by
+                                         S3StorageAutoConfigurationTest's decision matrix rather than
+                                         by a percentage over accessors. -->
+                                    <includes>
+                                        <include>net/aetherealtech/storage/s3/*</include>
+                                    </includes>
+                                    <limits>
+                                        <limit>
+                                            <counter>LINE</counter>
+                                            <value>COVEREDRATIO</value>
+                                            <minimum>0.90</minimum>
+                                        </limit>
+                                        <limit>
+                                            <counter>BRANCH</counter>
+                                            <value>COVEREDRATIO</value>
+                                            <minimum>0.80</minimum>
+                                        </limit>
+                                    </limits>
+                                </rule>
+                            </rules>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>
