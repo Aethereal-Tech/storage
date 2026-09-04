@@ -20,9 +20,14 @@ same number, so a mismatched pair cannot be resolved. Published to GitHub Packag
 `.github/workflows/publish.yml`; the poms stay on `-SNAPSHOT` and the release number is stamped in by
 CI.
 
-A consuming GitHub Actions workflow that declares a `permissions:` block must include
-`packages: read`, or `GITHUB_TOKEN` cannot read the package even after the repository has been
-granted access — declaring any permission zeroes the others.
+A GitHub Actions workflow in another repository can never read these packages with its own
+`GITHUB_TOKEN` — GitHub Packages for Maven always inherit the permissions of the publishing
+repository, and there is no per-package Actions access grant to widen that; the only credential that
+works from elsewhere is a personal access token held as a secret (Aethereal-Tech's org secret is
+`PACKAGES_READ_TOKEN`). The `permissions: packages: read` rule instead governs a workflow reading
+these packages from *within* this repository, using the default `GITHUB_TOKEN`: declaring a
+`permissions:` block at all zeroes every permission not named, so that block must include
+`packages: read` or the token cannot read the package.
 
 The AWS SDK ships four HTTP clients and picks one off the classpath at runtime, failing at startup
 if it finds none or more than one. `url-connection-client` is the smallest that does the job and

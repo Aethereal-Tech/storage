@@ -88,14 +88,19 @@ enough — it must also be able to see this organization's private packages:
 
 The `<id>` must match the `<repository><id>` above.
 
-**In a consuming repository's CI**, the workflow's own `GITHUB_TOKEN` does *not* reach a package in
-another repository by default. Either grant that repository read access to the package — the
-package's own settings page, *Manage Actions access* — or put a token of the kind above in a secret
-and use it on every Maven step. A step that runs `mvn` without one fails resolving the dependency,
-not at some later step that looks related. If that consuming workflow declares a `permissions:`
-block at all, it must include `packages: read` — declaring any permission zeroes every permission
-not named, so a job with, say, only `contents: read` cannot read the package even after the
-repository above has granted access.
+**In a consuming repository's CI**, the workflow's own `GITHUB_TOKEN` never reaches a package in
+another repository. GitHub Packages for Maven always inherit the permissions of the repository that
+published them, and there is no per-package Actions access grant to widen that — no `permissions:`
+configuration in the consuming workflow makes a `GITHUB_TOKEN` from elsewhere work. The only
+credential that works is a token of the kind above, put in a secret and used on every Maven step
+(Aethereal-Tech repositories use the organization secret `PACKAGES_READ_TOKEN`, wired into
+`actions/setup-java` as `server-password: PACKAGES_READ_TOKEN`). A step that runs `mvn` without one
+fails resolving the dependency, not at some later step that looks related.
+
+The `permissions:` block does matter for a workflow reading this package from *within* this
+repository, using the default `GITHUB_TOKEN`: if it declares one at all, it must include
+`packages: read` — declaring any permission zeroes every permission not named, so a job with, say,
+only `contents: read` cannot read the package even though the token is otherwise entitled to it.
 
 ## Quickstart — plain Java
 
