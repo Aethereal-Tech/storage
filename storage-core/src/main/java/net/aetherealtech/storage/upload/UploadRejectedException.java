@@ -31,7 +31,12 @@ public class UploadRejectedException extends StorageException {
          */
         HEIC_UNSUPPORTED,
 
-        /** More bytes than the rule allows. */
+        /**
+         * More bytes than the rule allows, OR — raised before any decoding, from the header alone —
+         * a declared width×height over {@link UploadRule#maxDecodedPixels()}. Both are "this is too
+         * big to accept" from the caller's point of view; the message says which, naming either
+         * bytes or pixels.
+         */
         TOO_LARGE,
 
         /**
@@ -41,7 +46,16 @@ public class UploadRejectedException extends StorageException {
         TOO_SMALL,
 
         /** No bytes at all. Not "a format nothing recognised" — that is {@link #UNSUPPORTED_FORMAT}. */
-        UNREADABLE
+        UNREADABLE,
+
+        /**
+         * The header parsed, passed the megapixel bound and every check above, but the pixels
+         * themselves do not decode — {@code ImageIO.read} returned {@code null} or threw. Distinct
+         * from {@link #UNREADABLE}, which means no bytes at all: this is bytes that look like a real
+         * header and are not a real image, the case a corrupt upload or a truncated transfer
+         * produces. See {@link UploadInspector} for which formats this is even checked for.
+         */
+        UNDECODABLE
     }
 
     private final Reason reason;
