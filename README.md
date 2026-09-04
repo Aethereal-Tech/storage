@@ -24,8 +24,10 @@ used as an S3 *protocol* client, and everything is decided by the endpoint you c
 - **`ObjectKey`** — a validated key. No `..` segment, no leading `/`, no backslash, no control
   characters, no empty segment, at most 1024 characters.
 - **Upload inspection** — `UploadRule` says what is allowed; `UploadInspector` reads what the bytes
-  actually are from their **magic bytes** and refuses everything else, with a reason you can turn
-  into a sentence. HEIC gets its own reason, because it is what an iPhone produces by default.
+  actually are from their **magic bytes**, proves a raster format actually **decodes** behind a
+  megapixel bound that stops a declared bomb before it is decoded, and refuses everything else with a
+  reason you can turn into a sentence. HEIC gets its own reason, because it is what an iPhone produces
+  by default.
 - **`AfterCommit`** — deletes the object once the transaction that dropped its row has committed.
 - **Optional Spring Boot autoconfiguration** with two modes: refuse to start without storage, or run
   without it and refuse per call.
@@ -271,25 +273,44 @@ catch (final UploadRejectedException e) {
         case TOO_LARGE          -> "At most 5 MB.";
         case TOO_SMALL          -> "At least 32 pixels on the longest side.";
         case UNREADABLE         -> "That file is empty.";
+        case UNDECODABLE        -> "That file is corrupted — try exporting it again.";
     };
     throw new BadRequest(message);
 }
 ```
 
-Two things worth knowing about it:
+Three things worth knowing about it:
 
 - **`HEIC_UNSUPPORTED` is a separate reason from `UNSUPPORTED_FORMAT`** because HEIC is what an
   iPhone produces by *default*. It will be tried, by people with no idea their camera does anything
   unusual, and the only useful message names the format and says to export as a JPEG. "Unsupported
   file type" sends that person back to try the same photo again.
-- **Dimensions that cannot be read pass the minimum-size check.** The format check has already
-  established what the file is; refusing on an `ImageReader` that cannot introspect a perfectly valid
-  file would turn a library quirk into a rejected upload. `TOO_SMALL` is only ever raised on a
-  dimension actually read. PNG and JPEG have readers in every JDK.
+- **Dimensions that cannot be read pass the minimum-size check — and skip decoding too.** The format
+  check has already established what the file is; refusing on an `ImageReader` that cannot introspect
+  a perfectly valid file would turn a library quirk into a rejected upload. `TOO_SMALL` is only ever
+  raised on a dimension actually read, and the same gate covers the checks below: a format with no
+  `ImageReader` on this JDK — PDF, WEBP, HEIC, AVIF — is never handed to `ImageIO.read` either. PNG
+  and JPEG have readers in every JDK; GIF and BMP do too, and TIFF has since JDK 9.
+- **`inspect` proves the bytes decode, not just that the header looks right.** A file can carry a
+  perfectly valid PNG signature and header — even a correct width and height — while its compressed
+  pixel data is garbage: a browser renders that as a broken image after it is already stored,
+  `naturalWidth` zero, nothing left to repair it from. Once the size, format, dimension and megapixel
+  checks below have passed, `inspect` calls `ImageIO.read` on a fresh stream over the same bytes; a
+  `null` result or any exception from the decoder is `UNDECODABLE`, and the object is never written.
 
-Nothing here decodes an image. Dimensions come from the header, never from `ImageIO.read`, which
-would expand the pixels — a few hundred kilobytes becoming hundreds of megabytes of heap is exactly
-the decompression bomb an upload endpoint must not be open to.
+**The order matters, and the megapixel bound exists because of it.** Dimensions are read from the
+HEADER via an `ImageReader`, which only has to parse enough to answer `getWidth`/`getHeight` — a
+hundred-byte file can declare 100000×100000 without anything checking it is telling the truth. Handing
+that straight to `ImageIO.read`, which allocates a buffer for the pixels it is told about, is the
+decompression bomb an upload endpoint must not be open to. So the checks run **size → format →
+dimensions/minimum edge → megapixel bound → decode**: `UploadRule.maxDecodedPixels()` (`50_000_000` by
+default — comfortably above any real photo) is checked against the DECLARED `width × height` before
+`ImageIO.read` ever runs, and a header over the bound is `TOO_LARGE` naming pixels, not bytes. Set a
+different bound with `UploadRule`'s canonical constructor; `UploadRule.of(...)` keeps the default.
+
+```java
+new UploadRule(Set.of(UploadFormat.PNG, UploadFormat.JPEG), 5 * 1024 * 1024, 32, 20_000_000L);
+```
 
 ## Three rules for whoever uses this
 
@@ -422,8 +443,9 @@ parked and on what.
   untested adapter with a dependency.
 - **No retries.** The SDK's own are switched off and a single call is bounded at ten seconds. A
   caller is sitting in a request thread; whether to try again is its decision, not a library's.
-- **No image processing.** No resizing, no re-encoding, no thumbnails. Inspection reads the header
-  and nothing decodes a pixel.
+- **No image processing.** No resizing, no re-encoding, no thumbnails. Inspection decodes a raster
+  format ONLY to prove it decodes — the decoded image is discarded, never returned, resized or
+  re-encoded.
 
 ## Building
 

@@ -106,23 +106,40 @@ Recognised (`UploadFormat`), which is deliberately wider than any consumer allow
 Each signature checks only the bytes it needs — a single twelve-byte floor (WebP's) would make a
 valid eight-byte PNG stub come back `UNKNOWN`. `BM` is checked last, being two bytes long.
 
-Allowed is `UploadRule(Set<UploadFormat> allowed, long maxBytes, int minLongEdge)`. **No presets and
-no defaults**: five megabytes and thirty-two pixels are one product's policy.
+Allowed is `UploadRule(Set<UploadFormat> allowed, long maxBytes, int minLongEdge, long
+maxDecodedPixels)`. **No presets and no defaults on the first three**: five megabytes and thirty-two
+pixels are one product's policy. `maxDecodedPixels` is the one field with a library default —
+`UploadRule.DEFAULT_MAX_DECODED_PIXELS`, 50 megapixels — applied by `UploadRule.of(maxBytes,
+minLongEdge, formats...)`, which keeps its three-argument-plus-varargs shape; a consumer wanting a
+different bound uses the canonical constructor.
 
-Rejection reasons, in the order the checks run:
+The checks run in this order, size first and decoding last:
+
+**size → format → dimensions/minimum edge → megapixel bound → decode.**
 
 | Reason | Raised when |
 |---|---|
 | `UNREADABLE` | no bytes at all |
-| `TOO_LARGE` | over `maxBytes` — before anything parses, so an oversized upload never reaches a reader |
+| `TOO_LARGE` | over `maxBytes` (before anything parses, so an oversized upload never reaches a reader) **or** a declared `width × height` over `maxDecodedPixels` (before anything decodes) — the message names bytes or pixels accordingly |
 | `HEIC_UNSUPPORTED` | a HEIC the rule does not allow; its own reason because it is the iPhone default and the message must say "export as JPEG" |
 | `UNSUPPORTED_FORMAT` | any other format the rule does not allow, `UNKNOWN` included |
 | `TOO_SMALL` | a long edge actually READ that is under `minLongEdge` |
+| `UNDECODABLE` | dimensions were read, the megapixel bound cleared, but `ImageIO.read` on a fresh stream returned `null` or threw |
 
-Dimensions come from the header via a `javax.imageio` `ImageReader`, never `ImageIO.read`, which
-would expand the pixels — a decompression bomb an upload endpoint must not be open to. PNG and JPEG
-have readers in every JDK; other formats depend on what `javax.imageio` was given.
-**Dimensions that could not be read PASS**, and `TOO_SMALL` is never raised on a guess.
+Dimensions come from the header via a `javax.imageio` `ImageReader`, which only has to parse enough to
+answer `getWidth`/`getHeight` — a header is free to lie about the pixels behind it, which is exactly
+what `maxDecodedPixels` is checked against before anything calls `ImageIO.read`, the call that
+allocates a buffer sized by what the header claims. **Dimensions that could not be read PASS**, and
+neither `TOO_SMALL`, the megapixel bound, nor the decode step is ever raised on a guess: a format with
+no `ImageReader` on this JDK (PDF, WEBP, HEIC, AVIF) reaches none of the three. PNG, JPEG, GIF and BMP
+have readers in every JDK; TIFF has since JDK 9.
+
+Once a reader exists, `inspect` calls `ImageIO.read` on a FRESH stream over the same bytes — the
+reader used to measure dimensions is already spent and disposed — and refuses `UNDECODABLE` on a
+`null` result or any exception. This is what closes the actual defect: a file can carry a valid
+signature and a valid, correctly-sized header while its compressed pixel data is corrupt, passing
+every check above and rendering as a broken image only once it is already stored. Proving decodability
+is the only check that catches it.
 
 ## Modes
 
