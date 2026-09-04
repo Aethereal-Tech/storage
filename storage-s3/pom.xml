@@ -29,12 +29,16 @@
              everything is decided by the configured endpoint, and the same code reaches Hetzner,
              MinIO or any other S3-compatible service.
 
-             The SDK ships three HTTP clients and picks one off the classpath at runtime, failing at
+             The SDK ships four HTTP clients and picks one off the classpath at runtime, failing at
              startup if it finds none or more than one. url-connection-client is the smallest:
              java.net.HttpURLConnection, no Netty event loop and no Apache connection pool, which is
-             enough for putting and deleting objects of a few megabytes. The other two are excluded
-             rather than merely not added, because `s3` pulls apache-client transitively and Netty
-             arrives with anything asynchronous — an unexcluded pair is an ambiguous-client failure
+             enough for putting and deleting objects of a few megabytes. The other three are excluded
+             rather than merely not added, because `s3` pulls apache-client AND apache5-client
+             transitively — the SDK's old and new Apache-backed sync clients, both present on the
+             classpath during its major-version migration — and Netty arrives with anything
+             asynchronous. Leaving any one of them unexcluded puts a second sync client beside
+             url-connection-client, and the SDK's runtime client discovery is ambiguous the moment
+             more than one implementation of the same kind is present — an ambiguous-client failure
              at a consumer's startup, in a consumer's build, for a dependency they never named. -->
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
@@ -43,6 +47,10 @@
                 <exclusion>
                     <groupId>software.amazon.awssdk</groupId>
                     <artifactId>apache-client</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>software.amazon.awssdk</groupId>
+                    <artifactId>apache5-client</artifactId>
                 </exclusion>
                 <exclusion>
                     <groupId>software.amazon.awssdk</groupId>

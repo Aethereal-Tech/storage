@@ -13,19 +13,24 @@ Legend for FUTURE: **CUT** = decided against, do not re-propose without new info
 | Artifact | Holds | Runtime dependencies |
 |---|---|---|
 | `net.aetherealtech:storage-core` | the port, `ObjectKey`, `StoredObject`, the exceptions, upload inspection, `InMemoryObjectStorage`, `UnavailableObjectStorage`, `AfterCommit`, the Spring autoconfiguration | **none.** `spring-boot-autoconfigure` and `spring-tx` are `<optional>true</optional>` |
-| `net.aetherealtech:storage-s3` | `S3ObjectStorage`, `S3Config`, its own autoconfiguration | `software.amazon.awssdk:s3` + `url-connection-client`; `apache-client` and `netty-nio-client` excluded |
+| `net.aetherealtech:storage-s3` | `S3ObjectStorage`, `S3Config`, its own autoconfiguration | `software.amazon.awssdk:s3` + `url-connection-client`; `apache-client`, `apache5-client` and `netty-nio-client` excluded |
 
 Java 25, compiled with `--release 25`. MIT. Both artifacts are published from the same commit at the
 same number, so a mismatched pair cannot be resolved. Published to GitHub Packages from `master` by
 `.github/workflows/publish.yml`; the poms stay on `-SNAPSHOT` and the release number is stamped in by
 CI.
 
-The AWS SDK ships three HTTP clients and picks one off the classpath at runtime, failing at startup
-if it finds none or more than one. `url-connection-client` is the smallest that does the job;
-the other two are excluded rather than merely not added, because `s3` pulls `apache-client`
-transitively and an unexcluded pair is an ambiguous-client failure in a consumer's build, for a
-dependency they never named. `S3ObjectStorage` also names the client explicitly rather than relying
-on the scan.
+A consuming GitHub Actions workflow that declares a `permissions:` block must include
+`packages: read`, or `GITHUB_TOKEN` cannot read the package even after the repository has been
+granted access — declaring any permission zeroes the others.
+
+The AWS SDK ships four HTTP clients and picks one off the classpath at runtime, failing at startup
+if it finds none or more than one. `url-connection-client` is the smallest that does the job and
+the only one reaching a consumer; the other three — `apache-client`, `apache5-client` and
+`netty-nio-client` — are excluded rather than merely not added, because `s3` pulls `apache-client`
+AND `apache5-client` transitively, and an unexcluded pair is an ambiguous-client failure in a
+consumer's build, for a dependency they never named. `S3ObjectStorage` also names the client
+explicitly rather than relying on the scan.
 
 ## The port
 
@@ -215,9 +220,9 @@ to contradict.
 
 | Product | Mode | Store | Keys | Status |
 |---|---|---|---|---|
-| kapar | `required` — every image lives in the bucket | Hetzner `nbg1` | `listings/{id}/{uuid}`, `organizations/{id}/logo`, `ads/{id}/{uuid}` | its own copy is what this library was extracted from; migration on kapar's schedule |
+| kapar | `storage.mode=required` | Hetzner `nbg1` | `listings/{id}/{uuid}`, `organizations/{id}/logo`, `ads/{id}/{uuid}` | migrating (kapar.net PR in progress) |
 | Composure | `optional` — a tenant with no logo is an ordinary tenant, and the asset endpoints answer 503 | Hetzner `nbg1`, bucket defaulted to test | organization logos | planned |
-| invicta | `required` | Hetzner | tenant-prefixed: `{organizationId}/orders/{id}/{uuid}`, `{organizationId}/product-templates/{id}/{slot}`, `{organizationId}/branding/logo` | planned |
+| invicta | `storage.mode=required` | proven against the Hetzner test bucket and their MinIO e2e tier | `{organizationId}/orders/{id}/{uuid}`, `{organizationId}/product-templates/{id}/{slot}`, `{organizationId}/branding/logo` | adopting on their ERP branch, 0.1.0 |
 
 Composure's `UnavailableObjectStorage` answers `exists → false` and swallows `delete`; **this
 library's throws on both** (see CLAUDE.md for why). That is the one behaviour change Composure's

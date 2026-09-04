@@ -92,7 +92,10 @@ The `<id>` must match the `<repository><id>` above.
 another repository by default. Either grant that repository read access to the package — the
 package's own settings page, *Manage Actions access* — or put a token of the kind above in a secret
 and use it on every Maven step. A step that runs `mvn` without one fails resolving the dependency,
-not at some later step that looks related.
+not at some later step that looks related. If that consuming workflow declares a `permissions:`
+block at all, it must include `packages: read` — declaring any permission zeroes every permission
+not named, so a job with, say, only `contents: read` cannot read the package even after the
+repository above has granted access.
 
 ## Quickstart — plain Java
 
