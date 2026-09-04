@@ -20,6 +20,10 @@ same number, so a mismatched pair cannot be resolved. Published to GitHub Packag
 `.github/workflows/publish.yml`; the poms stay on `-SNAPSHOT` and the release number is stamped in by
 CI.
 
+A consuming GitHub Actions workflow that declares a `permissions:` block must include
+`packages: read`, or `GITHUB_TOKEN` cannot read the package even after the repository has been
+granted access — declaring any permission zeroes the others.
+
 The AWS SDK ships three HTTP clients and picks one off the classpath at runtime, failing at startup
 if it finds none or more than one. `url-connection-client` is the smallest that does the job;
 the other two are excluded rather than merely not added, because `s3` pulls `apache-client`
@@ -215,9 +219,9 @@ to contradict.
 
 | Product | Mode | Store | Keys | Status |
 |---|---|---|---|---|
-| kapar | `required` — every image lives in the bucket | Hetzner `nbg1` | `listings/{id}/{uuid}`, `organizations/{id}/logo`, `ads/{id}/{uuid}` | its own copy is what this library was extracted from; migration on kapar's schedule |
+| kapar | `storage.mode=required` | Hetzner `nbg1` | `listings/{id}/{uuid}`, `organizations/{id}/logo`, `ads/{id}/{uuid}` | migrating (kapar.net PR in progress) |
 | Composure | `optional` — a tenant with no logo is an ordinary tenant, and the asset endpoints answer 503 | Hetzner `nbg1`, bucket defaulted to test | organization logos | planned |
-| invicta | `required` | Hetzner | tenant-prefixed: `{organizationId}/orders/{id}/{uuid}`, `{organizationId}/product-templates/{id}/{slot}`, `{organizationId}/branding/logo` | planned |
+| invicta | `storage.mode=required` | proven against the Hetzner test bucket and their MinIO e2e tier | `{organizationId}/orders/{id}/{uuid}`, `{organizationId}/product-templates/{id}/{slot}`, `{organizationId}/branding/logo` | adopting on their ERP branch, 0.1.0 |
 
 Composure's `UnavailableObjectStorage` answers `exists → false` and swallows `delete`; **this
 library's throws on both** (see CLAUDE.md for why). That is the one behaviour change Composure's
