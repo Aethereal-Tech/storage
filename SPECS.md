@@ -242,7 +242,7 @@ to contradict.
 
 | Product | Mode | Store | Keys | Status |
 |---|---|---|---|---|
-| kapar | `storage.mode=required` | Hetzner `nbg1` | `listings/{id}/{uuid}`, `organizations/{id}/logo`, `ads/{id}/{uuid}` | migrating (kapar.net PR in progress) |
+| kapar | `storage.mode=required` | Hetzner `nbg1` | `listings/{id}/{uuid}`, `organizations/{id}/logo`, `ads/{id}/{uuid}` | live on test, v1.6.2, 0.1.1 |
 | Composure | `optional` — a tenant with no logo is an ordinary tenant, and the asset endpoints answer 503 | Hetzner `nbg1`, bucket defaulted to test | organization logos | planned |
 | invicta | `storage.mode=required` | proven against the Hetzner test bucket and their MinIO e2e tier | `{organizationId}/orders/{id}/{uuid}`, `{organizationId}/product-templates/{id}/{slot}`, `{organizationId}/branding/logo` | adopting on their ERP branch, 0.1.0 |
 
