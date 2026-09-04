@@ -13,7 +13,7 @@ Legend for FUTURE: **CUT** = decided against, do not re-propose without new info
 | Artifact | Holds | Runtime dependencies |
 |---|---|---|
 | `net.aetherealtech:storage-core` | the port, `ObjectKey`, `StoredObject`, the exceptions, upload inspection, `InMemoryObjectStorage`, `UnavailableObjectStorage`, `AfterCommit`, the Spring autoconfiguration | **none.** `spring-boot-autoconfigure` and `spring-tx` are `<optional>true</optional>` |
-| `net.aetherealtech:storage-s3` | `S3ObjectStorage`, `S3Config`, its own autoconfiguration | `software.amazon.awssdk:s3` + `url-connection-client`; `apache-client` and `netty-nio-client` excluded |
+| `net.aetherealtech:storage-s3` | `S3ObjectStorage`, `S3Config`, its own autoconfiguration | `software.amazon.awssdk:s3` + `url-connection-client`; `apache-client`, `apache5-client` and `netty-nio-client` excluded |
 
 Java 25, compiled with `--release 25`. MIT. Both artifacts are published from the same commit at the
 same number, so a mismatched pair cannot be resolved. Published to GitHub Packages from `master` by
@@ -24,12 +24,13 @@ A consuming GitHub Actions workflow that declares a `permissions:` block must in
 `packages: read`, or `GITHUB_TOKEN` cannot read the package even after the repository has been
 granted access — declaring any permission zeroes the others.
 
-The AWS SDK ships three HTTP clients and picks one off the classpath at runtime, failing at startup
-if it finds none or more than one. `url-connection-client` is the smallest that does the job;
-the other two are excluded rather than merely not added, because `s3` pulls `apache-client`
-transitively and an unexcluded pair is an ambiguous-client failure in a consumer's build, for a
-dependency they never named. `S3ObjectStorage` also names the client explicitly rather than relying
-on the scan.
+The AWS SDK ships four HTTP clients and picks one off the classpath at runtime, failing at startup
+if it finds none or more than one. `url-connection-client` is the smallest that does the job and
+the only one reaching a consumer; the other three — `apache-client`, `apache5-client` and
+`netty-nio-client` — are excluded rather than merely not added, because `s3` pulls `apache-client`
+AND `apache5-client` transitively, and an unexcluded pair is an ambiguous-client failure in a
+consumer's build, for a dependency they never named. `S3ObjectStorage` also names the client
+explicitly rather than relying on the scan.
 
 ## The port
 
