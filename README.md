@@ -432,8 +432,8 @@ the by-hand setup rather than to the code.
 
 ## Non-goals
 
-Deliberately absent from 0.1.0. Each is a decision, not an oversight — see SPECS.md for which are
-parked and on what.
+Deliberately absent from 0.1.0. Each is a decision, not an oversight — see `openspec/changes/` for
+which are parked and on what.
 
 - **No bucket creation, configuration or deletion.** Including CORS and lifecycle rules.
 - **No streaming reads or multipart uploads.** `get` holds the whole object; every consumer's largest

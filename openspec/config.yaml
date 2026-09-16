@@ -1,0 +1,46 @@
+schema: spec-driven
+
+context: |
+  storage: a Maven reactor (Java 25, MIT-licensed) publishing net.aetherealtech:storage-core and
+  net.aetherealtech:storage-s3 from the same commit at the same version. A standalone library consumed by more than
+  one product, with its own rules that do not bend to suit any one consumer.
+  The port, `ObjectStorage`, is seven methods over three plain types — a KEY, some BYTES and a CONTENT TYPE — with
+  no domain type in any signature, ever. `ObjectKey` is a validated record built from ids a caller already owns,
+  never from an uploaded filename. Upload inspection (`UploadRule`, `UploadInspector`, `UploadFormat`,
+  `UploadRejectedException`) sniffs the real format from magic bytes, proves a raster format actually decodes behind
+  a megapixel bound, and refuses everything else by a named reason — HEIC gets its own reason
+  (`HEIC_UNSUPPORTED`) distinct from `UNSUPPORTED_FORMAT`, and `UNDECODABLE` is the reason a header that parses but
+  will not decode gets refused. `storage-s3` is the S3-compatible adapter (`S3ObjectStorage`, `S3Config`): virtual
+  hosted addressing throughout, reads presigned and writes not, one error-mapping method, no retries. `storage.mode`
+  is the one switch the library carries as a mode rather than a default — `required` fails the context at startup
+  with no credentials, `optional` degrades to a null object that refuses per call — because its consumers genuinely
+  disagree about which is right for their own product.
+  `storage-core` has ZERO mandatory runtime dependencies; Spring is `<optional>true</optional>` and the AWS SDK lives
+  only in `storage-s3`. CLAUDE.md holds every rule that binds a change; read it first. These specs are the record of
+  what is built, including the invariants and the reasons a reader would otherwise undo — they keep the
+  load-bearing names, numbers and refusal reasons on purpose. A change's Status carries one of three tags: CUT means
+  decided against, do not re-propose; PARKED may return and states the condition that reopens it; a change with
+  neither tag is simply not built yet. Every change names who owns its prerequisite — "a consumer" where SPECS.md
+  once named a specific private product, since this library carries no consumer's name.
+
+rules:
+  proposal:
+    - 'Carry a "## Status" section carrying the tag (PARKED, CUT or none), why it waits, what reopens it and who owns the prerequisite.'
+    - Never attribute a prerequisite to a named private product; say "a consumer" instead.
+  specs:
+    - Keep the reasoning under each requirement as prose; the record holds what a reader cannot see by opening a class.
+    - Names, property keys, defaults, numbers, refusal reasons and versions stay verbatim.
+    - SHALL or MUST in the requirement sentence; scenarios are the source's own concrete cases, never invented ones.
+  design:
+    - A decision the maintainer has already taken is recorded as taken, and is not reopened.
+    - No domain type ever appears in a signature (CLAUDE.md rule 1) — a proposal introducing one is wrong, not the rule.
+  tasks:
+    - Every task names how it is verified, the test that fails without it and the tier it runs in.
+
+operations:
+  apply:
+    guidance:
+      - Before reporting a task done, run the verification ladder CLAUDE.md prescribes and say what was not run.
+  archive:
+    guidance:
+      - Archive in the same commit that ships the change, then run openspec validate --all --strict.

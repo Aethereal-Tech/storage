@@ -51,7 +51,7 @@ import net.aetherealtech.storage.StoredObject;
  */
 class S3ObjectStorageTest {
 
-    private static final String BUCKET = "kapar-photos";
+    private static final String BUCKET = "sample-photos";
 
     // Deliberately has a slash, so every assertion on a request line also proves a multi-segment key
     // survives addressing untouched.
@@ -105,7 +105,7 @@ class S3ObjectStorageTest {
         store.stubFor(put(anyUrl()).willReturn(aResponse().withStatus(200)));
         // Cyrillic bytes prove the body reaches the wire unmangled, not just ASCII bytes that would
         // survive almost any encoding bug.
-        final byte[] bytes = "Здраво, Капар!".getBytes(StandardCharsets.UTF_8);
+        final byte[] bytes = "Здраво, Акме!".getBytes(StandardCharsets.UTF_8);
 
         try (S3ObjectStorage storage = storage(false)) {
             // No charset parameter: the JDK's own HttpURLConnection normalises a charset token's
