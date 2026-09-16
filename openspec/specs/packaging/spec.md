@@ -78,22 +78,30 @@ Every Maven request to `maven.pkg.github.com` SHALL require an authenticated tok
 public — anonymous downloads return 401 whatever a repository's visibility is, a GitHub platform limitation rather
 than a choice made here. Because the package is public, `read:packages` alone SHALL be enough: a classic personal
 access token with that one scope, a fine-grained token, or, inside a GitHub Actions workflow, that workflow's own
-`GITHUB_TOKEN` — no `repo` scope and no membership of the publishing organization is needed. A workflow reading
-these packages from WITHIN the publishing repository, using the default `GITHUB_TOKEN`, MUST still declare
-`permissions: packages: read` explicitly if it declares a `permissions:` block at all, since declaring one zeroes
-every permission not named.
+`GITHUB_TOKEN` — no `repo` scope and no membership of the publishing organization is needed.
 
-#### Scenario: A workflow in another repository reads the public package with its own GITHUB_TOKEN
-- **WHEN** a GitHub Actions workflow in another repository reads `storage-core` or `storage-s3` with its own
-  default `GITHUB_TOKEN`
+A job authenticating with a workflow's own `GITHUB_TOKEN` MUST declare `packages: read` whenever it declares a
+`permissions:` block at all, since declaring one zeroes every permission not named. **The condition is the
+CREDENTIAL, not the repository**: it binds a consuming repository's workflow exactly as it binds one inside this
+repository, and it does not bind a personal access token at all, because a `permissions:` block scopes
+`GITHUB_TOKEN` alone and leaves a PAT in `settings.xml` untouched.
+
+#### Scenario: A workflow reads the public package with its own GITHUB_TOKEN and declares no permissions block
+- **WHEN** a GitHub Actions workflow in any repository reads `storage-core` or `storage-s3` with its own default
+  `GITHUB_TOKEN` and declares no `permissions:` block
 - **THEN** the read succeeds, because the package is public and that token's default permissions already include
   `packages: read`
 
-#### Scenario: A workflow inside this repository must declare packages: read
-- **WHEN** a workflow inside this repository reads these packages using the default `GITHUB_TOKEN`
-- **THEN** it must declare a `permissions:` block that includes `packages: read`
-- **AND** omitting that permission from a declared block leaves the token unable to read the package even though it
-  is otherwise entitled to it
+#### Scenario: A job declaring a permissions block must name packages: read
+- **WHEN** a job authenticating with its own `GITHUB_TOKEN` declares a `permissions:` block, in this repository or
+  in a consuming one
+- **THEN** that block must include `packages: read`
+- **AND** omitting it leaves the token unable to read the package even though it is otherwise entitled to it
+
+#### Scenario: A permissions block does not affect a personal access token
+- **WHEN** a job authenticates with a personal access token supplied as the `<server>` password in `settings.xml`
+- **THEN** the job's `permissions:` block has no bearing on whether the package resolves, because that block scopes
+  `GITHUB_TOKEN` alone
 
 ### Requirement: 0.x publishing is automatic with no version-bump commit
 The API MAY still change under `0.x`. Publishing SHALL be automatic from `master`; the poms SHALL stay on

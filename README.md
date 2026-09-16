@@ -91,10 +91,14 @@ permissions already include `packages: read`. That default is what changes with 
 package would need a personal access token in a secret instead, since a workflow's `GITHUB_TOKEN`
 never reaches a private package published by another repository.
 
-The `permissions:` block does matter for a workflow reading this package from *within* this
-repository: if it declares one at all, it must include `packages: read` — declaring any permission
-zeroes every permission not named, so a job with, say, only `contents: read` cannot read the package
-even though the token is otherwise entitled to it.
+The `permissions:` block matters whenever the credential is a workflow's OWN `GITHUB_TOKEN` — in a
+consuming repository just as much as in this one: if the job declares a block at all, it must include
+`packages: read`, because declaring any permission zeroes every permission not named, so a job with,
+say, only `contents: read` cannot read the package even though the token is otherwise entitled to it.
+
+It has no bearing on a personal access token supplied as the `<server>` password: that block scopes
+`GITHUB_TOKEN` alone, and a PAT is untouched by it. The condition is which credential you
+authenticate with, never which repository the job runs in.
 
 ## Quickstart — plain Java
 
