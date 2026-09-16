@@ -33,7 +33,7 @@ class S3StorageAutoConfigurationTest {
     // before the condition under test even runs.
     private static final String ENDPOINT = "storage.s3.endpoint=http://localhost:1";
     private static final String REGION = "storage.s3.region=eu-central-1";
-    private static final String BUCKET = "storage.s3.bucket=kapar-photos";
+    private static final String BUCKET = "storage.s3.bucket=sample-photos";
     private static final String ACCESS_KEY = "storage.s3.access-key=AKIAEXAMPLE";
     private static final String SECRET_KEY = "storage.s3.secret-key=secret";
 

@@ -1,6 +1,8 @@
 # Conventions for this repository
 
-SPECS.md is the record of what exists; this file is the rules.
+**The record of what exists is `openspec/`** — `specs/<capability>/spec.md` holds the port's shape and the
+adapter's wire behaviour with their coordinates, `changes/<name>/` the planned work, why it waits and who owns
+its prerequisite (never a named consumer — see AGENTS.md); this file is the rules alone.
 
 A standalone library, consumed by more than one product. These are its own rules; nothing here
 inherits from a consumer's repo, and nothing here may be bent to suit one of them.
@@ -86,7 +88,9 @@ the other.
   Javadoc on every public type.
 - **Conventional commits**, and **no AI attribution** — no `Co-Authored-By` for tools, no "generated
   with" trailer, nothing of the kind in commit messages, PR bodies, or code comments.
-- **When a FUTURE item in SPECS.md lands, it moves to PRESENT in the same commit that ships it.**
+- **A new rule or invariant is written into its spec in the same commit as the code, and a change that ships is
+  archived in that same commit**, which folds its delta into the specs; `openspec validate --all --strict` must
+  pass. Anything a reader can see by opening the class belongs in neither `CLAUDE.md` nor `openspec/`.
 
 ## Testing
 

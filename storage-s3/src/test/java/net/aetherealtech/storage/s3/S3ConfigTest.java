@@ -17,11 +17,11 @@ class S3ConfigTest {
 
     @Test
     void ofBuildsAConfigWithDefaults() {
-        final S3Config config = S3Config.of(ENDPOINT, "nbg1", "kapar-photos", "AK", "SECRET");
+        final S3Config config = S3Config.of(ENDPOINT, "nbg1", "sample-photos", "AK", "SECRET");
 
         assertThat(config.endpoint()).isEqualTo(ENDPOINT);
         assertThat(config.region()).isEqualTo("nbg1");
-        assertThat(config.bucket()).isEqualTo("kapar-photos");
+        assertThat(config.bucket()).isEqualTo("sample-photos");
         assertThat(config.accessKey()).isEqualTo("AK");
         assertThat(config.secretKey()).isEqualTo("SECRET");
         assertThat(config.presignTtl()).isEqualTo(Duration.ofMinutes(15));

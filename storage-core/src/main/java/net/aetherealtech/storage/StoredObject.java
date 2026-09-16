@@ -11,7 +11,7 @@ import java.util.Objects;
  * not be handed to two callers, asserted on twice, or re-read after a retry — and the size is
  * already bounded by whatever {@link net.aetherealtech.storage.upload.UploadRule} let in. Streaming
  * an object too large to hold in memory is a separate method this library does not yet have; see
- * SPECS.md.
+ * {@code openspec/changes/streaming-reads-and-multipart-uploads}.
  *
  * @param bytes       the object's contents
  * @param contentType the media type recorded when it was stored, never the one a caller declared at
