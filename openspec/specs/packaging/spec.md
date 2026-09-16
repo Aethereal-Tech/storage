@@ -73,19 +73,21 @@ module and bring its own config record.
 - **THEN** it lives in its own module with its own config record, as `S3ObjectStorage` and `S3Config` do in
   `storage-s3`
 
-### Requirement: GitHub Packages permissions are read from within the publishing repository only
-A GitHub Actions workflow in another repository SHALL NOT read these packages with its own `GITHUB_TOKEN` — GitHub
-Packages for Maven always inherit the permissions of the publishing repository, and there is no per-package Actions
-access grant to widen that. The only credential that works from elsewhere is a personal access token held as a
-secret. A workflow reading these packages from WITHIN this repository, using the default `GITHUB_TOKEN`, MUST
-declare `permissions: packages: read` explicitly, since declaring a `permissions:` block at all zeroes every
-permission not named.
+### Requirement: Every Maven request needs a token; being public keeps the bar at read:packages alone
+Every Maven request to `maven.pkg.github.com` SHALL require an authenticated token, even though the package is
+public — anonymous downloads return 401 whatever a repository's visibility is, a GitHub platform limitation rather
+than a choice made here. Because the package is public, `read:packages` alone SHALL be enough: a classic personal
+access token with that one scope, a fine-grained token, or, inside a GitHub Actions workflow, that workflow's own
+`GITHUB_TOKEN` — no `repo` scope and no membership of the publishing organization is needed. A workflow reading
+these packages from WITHIN the publishing repository, using the default `GITHUB_TOKEN`, MUST still declare
+`permissions: packages: read` explicitly if it declares a `permissions:` block at all, since declaring one zeroes
+every permission not named.
 
-#### Scenario: A workflow in another repository cannot use its own GITHUB_TOKEN
-- **WHEN** a GitHub Actions workflow in another repository tries to read `storage-core` or `storage-s3` with its own
-  `GITHUB_TOKEN`
-- **THEN** the read fails, because GitHub Packages for Maven inherit the publishing repository's permissions
-- **AND** the workflow needs a personal access token held as a secret instead
+#### Scenario: A workflow in another repository reads the public package with its own GITHUB_TOKEN
+- **WHEN** a GitHub Actions workflow in another repository reads `storage-core` or `storage-s3` with its own
+  default `GITHUB_TOKEN`
+- **THEN** the read succeeds, because the package is public and that token's default permissions already include
+  `packages: read`
 
 #### Scenario: A workflow inside this repository must declare packages: read
 - **WHEN** a workflow inside this repository reads these packages using the default `GITHUB_TOKEN`

@@ -61,18 +61,14 @@ Two artifacts, always released together at the same version.
 </repositories>
 ```
 
-### Authentication, and what a private repository changes
+### Authentication
 
-**GitHub Packages requires authentication even for public artifacts.** Anonymous Maven downloads
-from `maven.pkg.github.com` return 401 regardless of repository visibility. That is a GitHub platform
-limitation, not a choice made here.
-
-**This repository is private, and that raises the bar.** A token with `read:packages` alone is not
-enough — it must also be able to see this organization's private packages:
-
-- a **classic** personal access token needs `read:packages` **and** `repo`; or
-- a **fine-grained** token needs to be granted access to the `Aethereal-Tech/storage` repository,
-  with **Contents: read** and the organization's **Packages: read** permission.
+**Every request to GitHub Packages needs a token, even though this package is public.** Anonymous
+Maven downloads from `maven.pkg.github.com` return 401 whatever a repository's visibility is — a
+GitHub platform limitation, not a choice made here. Being public is what keeps the bar low: any
+authenticated token carrying `read:packages` resolves it — a **classic** personal access token with
+that one scope, a **fine-grained** token, or, inside a GitHub Actions workflow, the run's own
+`GITHUB_TOKEN`. Neither `repo` scope nor membership of the Aethereal Tech organization is needed.
 
 `~/.m2/settings.xml`:
 
@@ -90,19 +86,15 @@ enough — it must also be able to see this organization's private packages:
 
 The `<id>` must match the `<repository><id>` above.
 
-**In a consuming repository's CI**, the workflow's own `GITHUB_TOKEN` never reaches a package in
-another repository. GitHub Packages for Maven always inherit the permissions of the repository that
-published them, and there is no per-package Actions access grant to widen that — no `permissions:`
-configuration in the consuming workflow makes a `GITHUB_TOKEN` from elsewhere work. The only
-credential that works is a token of the kind above, put in a secret and used on every Maven step
-(Aethereal-Tech repositories use the organization secret `PACKAGES_READ_TOKEN`, wired into
-`actions/setup-java` as `server-password: PACKAGES_READ_TOKEN`). A step that runs `mvn` without one
-fails resolving the dependency, not at some later step that looks related.
+**In a consuming repository's CI**, the workflow's own default `GITHUB_TOKEN` is enough — its default
+permissions already include `packages: read`. That default is what changes with visibility: a private
+package would need a personal access token in a secret instead, since a workflow's `GITHUB_TOKEN`
+never reaches a private package published by another repository.
 
 The `permissions:` block does matter for a workflow reading this package from *within* this
-repository, using the default `GITHUB_TOKEN`: if it declares one at all, it must include
-`packages: read` — declaring any permission zeroes every permission not named, so a job with, say,
-only `contents: read` cannot read the package even though the token is otherwise entitled to it.
+repository: if it declares one at all, it must include `packages: read` — declaring any permission
+zeroes every permission not named, so a job with, say, only `contents: read` cannot read the package
+even though the token is otherwise entitled to it.
 
 ## Quickstart — plain Java
 
